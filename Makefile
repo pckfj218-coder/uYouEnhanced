@@ -128,5 +128,3 @@ endif
 after-stage::
 	@bash tools/stage-ffmpeg.sh "$(THEOS_STAGING_DIR)"
 
-# Now Playing persistence support
-$(TWEAK_NAME)_FRAMEWORKS += MediaPlayer
