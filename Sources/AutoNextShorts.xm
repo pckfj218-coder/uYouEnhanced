@@ -1,15 +1,12 @@
 #import <UIKit/UIKit.h>
 #import <Foundation/Foundation.h>
-#import <objc/message.h>
-#import <objc/runtime.h>
-
-// YTLite-style Shorts completion handling.
-// Observe YouTube's own playback-time callbacks and ask the reel controller
-// to advance through its internal method instead of searching collection views.
+#import <math.h>
 
 static NSString *const UYTAutoNextShortsKey = @"autoNextShorts_enabled";
 static NSTimeInterval UYTLastAdvanceUptime = 0.0;
 static NSString *UYTLastAdvancedVideoID = nil;
+static NSString *UYTObservedVideoID = nil;
+static CGFloat UYTLastObservedPosition = -1.0;
 
 @interface YTSingleVideoTime : NSObject
 @property(nonatomic, assign, readonly) CGFloat time;
@@ -54,25 +51,46 @@ static void UYTAdvanceToNextShort(YTPlayerViewController *player,
 
     CGFloat duration = video.totalMediaTime;
     CGFloat position = time.time;
-    if (!isfinite(duration) || !isfinite(position) || duration <= 0.5) return;
+    if (!isfinite(duration) || !isfinite(position) || duration <= 0.5 || position < 0.0) return;
 
-    // YouTube Shorts can loop before a generic AVPlayer end notification is emitted.
-    // Trigger while still at the end of YouTube's own playback timeline.
-    CGFloat remaining = duration - position;
-    CGFloat tolerance = MAX(0.12, MIN(0.35, duration * 0.003));
-    if (position < duration * 0.80 || remaining > tolerance) return;
-
-    NSTimeInterval now = NSProcessInfo.processInfo.systemUptime;
     NSString *videoID = nil;
     @try { videoID = player.contentVideoID; } @catch (__unused NSException *e) {}
 
-    // Prevent both YouTube time callbacks from advancing the same Short twice.
+    if ((videoID.length > 0 && ![videoID isEqualToString:UYTObservedVideoID]) ||
+        (videoID.length == 0 && position < 0.5 && UYTLastObservedPosition > 1.0)) {
+        UYTObservedVideoID = [videoID copy];
+        UYTLastObservedPosition = -1.0;
+    }
+
+    CGFloat previous = UYTLastObservedPosition;
+    CGFloat remaining = duration - position;
+    CGFloat naturalTolerance = MAX(0.12, MIN(0.35, duration * 0.003));
+
+    // Normal completion: preserve the original narrow end window.
+    BOOL naturalEnd = position >= duration * 0.80 && remaining <= naturalTolerance;
+
+    // Manual seek: if playback jumps forward into the last two seconds, advance immediately.
+    BOOL forwardSeekToEnd = previous >= 0.0 &&
+                            position - previous >= 1.0 &&
+                            position >= duration * 0.80 &&
+                            remaining <= 2.0;
+
+    // Loop fallback: YouTube may reset to zero before an end-window callback is delivered.
+    BOOL loopWrapped = previous >= duration * 0.80 &&
+                       duration - previous <= 2.0 &&
+                       position <= MIN(1.0, duration * 0.20);
+
+    UYTLastObservedPosition = position;
+    if (!naturalEnd && !forwardSeekToEnd && !loopWrapped) return;
+
+    NSTimeInterval now = NSProcessInfo.processInfo.systemUptime;
     if (now - UYTLastAdvanceUptime < 1.5) return;
     if (videoID.length > 0 && [videoID isEqualToString:UYTLastAdvancedVideoID] &&
         now - UYTLastAdvanceUptime < 5.0) return;
 
     UYTLastAdvanceUptime = now;
     UYTLastAdvancedVideoID = [videoID copy];
+    UYTLastObservedPosition = -1.0;
 
     dispatch_async(dispatch_get_main_queue(), ^{
         [reel reelContentViewRequestsAdvanceToNextVideo:nil];
