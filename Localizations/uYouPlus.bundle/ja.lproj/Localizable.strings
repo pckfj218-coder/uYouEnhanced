@@ -112,6 +112,9 @@
 "DISABLE_RESUME_TO_SHORTS" = "ショートの再開を無効化";
 "DISABLE_RESUME_TO_SHORTS_DESC" = "ショートを視聴中にアプリを終了し、再度開いた際にショートが再開されるのを防ぎます。";
 
+"AUTO_NEXT_SHORTS" = "Shortsを自動で次へ";
+"AUTO_NEXT_SHORTS_DESC" = "Shortsの再生が終了したら、次のShorts動画へ自動的に移動します。";
+
 // Miscellaneous
 "MISCELLANEOUS" = "🔎 その他";
 
