@@ -131,32 +131,46 @@
     %orig;
 }
 %end
-static BOOL UYTFactoryModelIsShortsAd(YTReelContentModel *model) {
+static BOOL UYTIsVideoShortsAdModel(YTReelContentModel *model) {
     if (!model) return NO;
-    if ([model respondsToSelector:@selector(videoType)] && ((YTReelModel *)model).videoType == 3)
-        return YES;
-    if ([model isKindOfClass:%c(YTReelNonVideoContentModel)]) {
-        NSString *description = [[[(YTReelNonVideoContentModel *)model renderer].customData description] copy];
-        return [description containsString:@"YTIReelNonVideoAdsCustomData_reelNonVideoAdsCustomData"];
-    }
-    return NO;
+    return [model respondsToSelector:@selector(videoType)] && ((YTReelModel *)model).videoType == 3;
 }
+
+static BOOL UYTIsNonVideoShortsAdModel(YTReelContentModel *model) {
+    if (!model || ![model isKindOfClass:%c(YTReelNonVideoContentModel)]) return NO;
+    NSString *description = [[[(YTReelNonVideoContentModel *)model renderer].customData description] copy];
+    return [description containsString:@"YTIReelNonVideoAdsCustomData_reelNonVideoAdsCustomData"];
+}
+
+static BOOL UYTIsAnyShortsAdModel(YTReelContentModel *model) {
+    return UYTIsVideoShortsAdModel(model) || UYTIsNonVideoShortsAdModel(model);
+}
+
 %hook YTReelDataSource
 - (YTReelContentModel *)makeContentModelForEntry:(id)entry {
     YTReelContentModel *model = %orig;
-    return UYTFactoryModelIsShortsAd(model) ? nil : model;
+    return UYTIsVideoShortsAdModel(model) ? nil : model;
 }
 %end
-%hook YTReelContentModel
-+ (YTReelContentModel *)makeContentModelForEntry:(id)entry {
-    YTReelContentModel *model = %orig;
-    return UYTFactoryModelIsShortsAd(model) ? nil : model;
-}
-%end
+
 %hook YTReelInfinitePlaybackDataSource
 - (YTReelContentModel *)makeContentModelForEntry:(id)entry {
     YTReelContentModel *model = %orig;
-    return UYTFactoryModelIsShortsAd(model) ? nil : model;
+    return UYTIsAnyShortsAdModel(model) ? nil : model;
+}
+
+- (NSMutableOrderedSet *)reels {
+    NSMutableOrderedSet *originalReels = %orig;
+    if (![originalReels isKindOfClass:[NSMutableOrderedSet class]])
+        return originalReels;
+
+    NSMutableOrderedSet *filteredReels = [originalReels mutableCopy];
+    NSIndexSet *adIndexes = [filteredReels indexesOfObjectsPassingTest:^BOOL(YTReelContentModel *model, NSUInteger idx, BOOL *stop) {
+        return UYTIsAnyShortsAdModel(model);
+    }];
+    if (adIndexes.count > 0)
+        [filteredReels removeObjectsAtIndexes:adIndexes];
+    return filteredReels;
 }
 %end
 static BOOL isProductList(YTICommand *command) {
