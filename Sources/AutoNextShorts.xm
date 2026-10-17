@@ -1,151 +1,175 @@
 #import <UIKit/UIKit.h>
 #import <Foundation/Foundation.h>
+#import <objc/message.h>
+#import <objc/runtime.h>
 #import <math.h>
 
 static NSString *const UYTAutoNextShortsKey = @"autoNextShorts_enabled";
-static NSTimeInterval UYTLastAdvanceUptime = 0.0;
-static __weak id UYTObservedVideoObject = nil;
-static CGFloat UYTLastPosition = -1.0;
-static CGFloat UYTLastDuration = -1.0;
+static const void *kUYTIdentity = &kUYTIdentity;
+static const void *kUYTLastTime = &kUYTLastTime;
+static const void *kUYTDuration = &kUYTDuration;
+static const void *kUYTNearEnd = &kUYTNearEnd;
+static const void *kUYTTriggered = &kUYTTriggered;
+static const void *kUYTLastAdvance = &kUYTLastAdvance;
 
 @interface YTSingleVideoTime : NSObject
-@property(nonatomic, assign, readonly) CGFloat time;
+@property(nonatomic, readonly) CGFloat time;
 @end
 
 @interface YTSingleVideoController : NSObject
-@property(nonatomic, assign, readonly) CGFloat totalMediaTime;
+@property(nonatomic, readonly) CGFloat totalMediaTime;
 @end
 
 @interface YTPlayerViewController : UIViewController
-@end
-
-@interface YTReelPlayerViewController : UIViewController
-- (void)reelContentViewRequestsAdvanceToNextVideo:(id)video;
+@property(nonatomic, readonly, copy) NSString *contentVideoID;
+@property(nonatomic, readonly) YTSingleVideoController *activeVideo;
 @end
 
 static BOOL UYTAutoNextEnabled(void) {
     return [[NSUserDefaults standardUserDefaults] boolForKey:UYTAutoNextShortsKey];
 }
 
-static BOOL UYTIsReelController(UIViewController *controller) {
-    if (!controller) return NO;
-    return [controller isKindOfClass:NSClassFromString(@"YTReelPlayerViewController")] ||
-           [controller isKindOfClass:NSClassFromString(@"YTShortsPlayerViewController")] ||
-           [controller isKindOfClass:NSClassFromString(@"YTReelPlayerViewControllerSub")];
+static BOOL UYTIsReelController(id object) {
+    if (!object) return NO;
+    NSString *name = NSStringFromClass([object class]);
+    return [name containsString:@"ReelPlayerViewController"] ||
+           [name containsString:@"ShortsPlayerViewController"];
 }
 
-static YTReelPlayerViewController *UYTFindReelInTree(UIViewController *controller, NSInteger depth) {
-    if (!controller || depth > 20) return nil;
-    if (UYTIsReelController(controller)) return (YTReelPlayerViewController *)controller;
-
-    UIViewController *presented = controller.presentedViewController;
-    YTReelPlayerViewController *found = UYTFindReelInTree(presented, depth + 1);
-    if (found) return found;
-
-    for (UIViewController *child in controller.childViewControllers) {
-        found = UYTFindReelInTree(child, depth + 1);
+static id UYTFindReelInTree(UIViewController *root, YTPlayerViewController *player, NSInteger depth) {
+    if (!root || depth > 24) return nil;
+    if (UYTIsReelController(root)) {
+        SEL playerSelector = NSSelectorFromString(@"player");
+        if (![root respondsToSelector:playerSelector] ||
+            ((id (*)(id, SEL))objc_msgSend)(root, playerSelector) == player) {
+            return root;
+        }
+    }
+    id presented = UYTFindReelInTree(root.presentedViewController, player, depth + 1);
+    if (presented) return presented;
+    for (UIViewController *child in root.childViewControllers) {
+        id found = UYTFindReelInTree(child, player, depth + 1);
         if (found) return found;
     }
     return nil;
 }
 
-static YTReelPlayerViewController *UYTFindReelController(UIViewController *controller) {
-    UIViewController *cursor = controller;
-    for (NSInteger i = 0; cursor && i < 20; i++) {
-        if (UYTIsReelController(cursor)) return (YTReelPlayerViewController *)cursor;
-        cursor = cursor.parentViewController;
+static id UYTFindReel(YTPlayerViewController *player) {
+    UIViewController *node = player;
+    for (NSInteger i = 0; node && i < 24; i++) {
+        if (UYTIsReelController(node)) return node;
+        node = node.parentViewController ?: node.navigationController;
     }
 
-    UIResponder *responder = controller;
-    for (NSInteger i = 0; responder && i < 30; i++) {
-        if ([responder isKindOfClass:UIViewController.class] &&
-            UYTIsReelController((UIViewController *)responder)) {
-            return (YTReelPlayerViewController *)responder;
-        }
-        responder = responder.nextResponder;
+    NSMutableArray<UIWindow *> *windows = [NSMutableArray array];
+    for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
+        if (![scene isKindOfClass:UIWindowScene.class]) continue;
+        if (scene.activationState != UISceneActivationStateForegroundActive &&
+            scene.activationState != UISceneActivationStateForegroundInactive) continue;
+        [windows addObjectsFromArray:((UIWindowScene *)scene).windows];
     }
-
-    UIWindow *window = controller.viewIfLoaded.window;
-    if (!window) {
-        for (UIWindow *candidate in UIApplication.sharedApplication.windows) {
-            if (candidate.isKeyWindow) {
-                window = candidate;
-                break;
-            }
-        }
+    for (UIWindow *window in windows.reverseObjectEnumerator) {
+        id found = UYTFindReelInTree(window.rootViewController, player, 0);
+        if (found) return found;
     }
-    if (!window) window = UIApplication.sharedApplication.windows.firstObject;
-    return UYTFindReelInTree(window.rootViewController, 0);
+    for (UIWindow *window in UIApplication.sharedApplication.windows.reverseObjectEnumerator) {
+        id found = UYTFindReelInTree(window.rootViewController, player, 0);
+        if (found) return found;
+    }
+    return nil;
 }
 
-static void UYTResetObservation(id video, CGFloat duration, CGFloat position) {
-    UYTObservedVideoObject = video;
-    UYTLastDuration = duration;
-    UYTLastPosition = position;
+static NSString *UYTCurrentIdentity(YTPlayerViewController *player,
+                                    YTSingleVideoController *video,
+                                    CGFloat duration) {
+    NSString *videoID = player.contentVideoID ?: @"";
+    if (videoID.length > 0) return videoID;
+    return [NSString stringWithFormat:@"%p|%.3f", video, duration];
 }
 
-static void UYTHandleShortTime(YTPlayerViewController *player,
-                               YTSingleVideoController *video,
-                               YTSingleVideoTime *time) {
-    if (!UYTAutoNextEnabled() || !player || !video || !time) return;
+static void UYTResetPlayerState(YTPlayerViewController *player,
+                                NSString *identity,
+                                CGFloat current,
+                                CGFloat duration) {
+    objc_setAssociatedObject(player, kUYTIdentity, identity, OBJC_ASSOCIATION_COPY_NONATOMIC);
+    objc_setAssociatedObject(player, kUYTLastTime, @(current), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    objc_setAssociatedObject(player, kUYTDuration, @(duration), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    objc_setAssociatedObject(player, kUYTNearEnd, @NO, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    objc_setAssociatedObject(player, kUYTTriggered, @NO, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+}
 
-    YTReelPlayerViewController *reel = UYTFindReelController(player);
-    if (!reel || ![reel respondsToSelector:@selector(reelContentViewRequestsAdvanceToNextVideo:)]) return;
-
-    CGFloat duration = video.totalMediaTime;
-    CGFloat position = time.time;
-    if (!isfinite(duration) || !isfinite(position) || duration <= 0.5 || position < 0.0) return;
-
-    BOOL firstSample = UYTLastDuration <= 0.0 || UYTLastPosition < 0.0;
-    BOOL durationChanged = UYTLastDuration > 0.0 && fabs(UYTLastDuration - duration) > 0.25;
-    BOOL ordinaryBackwardJump = UYTLastPosition >= 0.0 &&
-                                position + 1.0 < UYTLastPosition &&
-                                !(UYTLastPosition >= duration * 0.75 && position <= MIN(1.0, duration * 0.20));
-
-    if (firstSample || durationChanged || ordinaryBackwardJump) {
-        UYTResetObservation(video, duration, position);
-        return;
-    }
-
-    CGFloat previous = UYTLastPosition;
-    CGFloat remaining = duration - position;
-    CGFloat naturalTolerance = MAX(0.20, MIN(0.75, duration * 0.008));
-    BOOL naturalEnd = position >= duration * 0.70 && remaining <= naturalTolerance;
-    BOOL seekToEnd = previous >= 0.0 && position - previous >= 0.8 &&
-                     position >= duration * 0.70 && remaining <= 2.0;
-    BOOL loopWrapped = previous >= duration * 0.70 && duration - previous <= 2.0 &&
-                       position <= MIN(1.0, duration * 0.20);
-
-    UYTObservedVideoObject = video;
-    UYTLastPosition = position;
-    UYTLastDuration = duration;
-
-    if (!naturalEnd && !seekToEnd && !loopWrapped) return;
+static void UYTAdvance(YTPlayerViewController *player,
+                       YTSingleVideoController *video) {
+    if ([objc_getAssociatedObject(player, kUYTTriggered) boolValue]) return;
+    id reel = UYTFindReel(player);
+    SEL selector = NSSelectorFromString(@"reelContentViewRequestsAdvanceToNextVideo:");
+    if (!reel || ![reel respondsToSelector:selector]) return;
 
     NSTimeInterval now = NSProcessInfo.processInfo.systemUptime;
-    if (now - UYTLastAdvanceUptime < 0.8) return;
-    UYTLastAdvanceUptime = now;
-    UYTLastPosition = -1.0;
+    NSTimeInterval lastAdvance = [objc_getAssociatedObject(player, kUYTLastAdvance) doubleValue];
+    if (now - lastAdvance < 0.8) return;
 
-    __weak YTReelPlayerViewController *weakReel = reel;
+    objc_setAssociatedObject(player, kUYTLastAdvance, @(now), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    objc_setAssociatedObject(player, kUYTTriggered, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    __weak id weakReel = reel;
     dispatch_async(dispatch_get_main_queue(), ^{
-        YTReelPlayerViewController *strongReel = weakReel;
-        if (strongReel && [strongReel respondsToSelector:@selector(reelContentViewRequestsAdvanceToNextVideo:)]) {
-            [strongReel reelContentViewRequestsAdvanceToNextVideo:nil];
+        id strongReel = weakReel;
+        if (strongReel && [strongReel respondsToSelector:selector]) {
+            ((void (*)(id, SEL, id))objc_msgSend)(strongReel, selector, video);
         }
     });
 }
 
-%hook YTPlayerViewController
+static void UYTObserve(YTPlayerViewController *player,
+                       YTSingleVideoController *video,
+                       YTSingleVideoTime *timeObject) {
+    if (!UYTAutoNextEnabled() || !player || !video || !timeObject) return;
+    if (!UYTFindReel(player)) return;
 
-- (void)singleVideo:(YTSingleVideoController *)video currentVideoTimeDidChange:(YTSingleVideoTime *)time {
-    %orig;
-    UYTHandleShortTime(self, video, time);
+    CGFloat current = timeObject.time;
+    CGFloat duration = video.totalMediaTime;
+    if (!isfinite(current) || !isfinite(duration) || duration < 1.0 || current < 0.0) return;
+
+    NSString *identity = UYTCurrentIdentity(player, video, duration);
+    NSString *oldIdentity = objc_getAssociatedObject(player, kUYTIdentity);
+    CGFloat last = [objc_getAssociatedObject(player, kUYTLastTime) doubleValue];
+    CGFloat oldDuration = [objc_getAssociatedObject(player, kUYTDuration) doubleValue];
+    BOOL newItem = ![oldIdentity isEqualToString:identity] ||
+                   (oldDuration > 0.0 && fabs(oldDuration - duration) > 0.75);
+
+    if (newItem) {
+        UYTResetPlayerState(player, identity, current, duration);
+        return;
+    }
+
+    BOOL nearEnd = current >= MAX(duration - 0.85, duration * 0.982);
+    BOOL wrappedAfterEnd = [objc_getAssociatedObject(player, kUYTNearEnd) boolValue] &&
+                           last > MAX(duration - 1.75, duration * 0.955) &&
+                           current < MIN(1.35, duration * 0.10);
+    BOOL seekToEnd = last >= 0.0 && current - last >= 0.8 &&
+                     current >= duration * 0.75 && duration - current <= 2.0;
+
+    if (nearEnd) {
+        objc_setAssociatedObject(player, kUYTNearEnd, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    }
+    objc_setAssociatedObject(player, kUYTLastTime, @(current), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    objc_setAssociatedObject(player, kUYTDuration, @(duration), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+
+    if (nearEnd || wrappedAfterEnd || seekToEnd) {
+        UYTAdvance(player, video);
+    }
 }
 
-- (void)potentiallyMutatedSingleVideo:(YTSingleVideoController *)video currentVideoTimeDidChange:(YTSingleVideoTime *)time {
+%hook YTPlayerViewController
+
+- (void)singleVideo:(YTSingleVideoController *)video currentVideoTimeDidChange:(YTSingleVideoTime *)timeObject {
     %orig;
-    UYTHandleShortTime(self, video, time);
+    UYTObserve(self, video, timeObject);
+}
+
+- (void)potentiallyMutatedSingleVideo:(YTSingleVideoController *)video currentVideoTimeDidChange:(YTSingleVideoTime *)timeObject {
+    %orig;
+    UYTObserve(self, video, timeObject);
 }
 
 %end
