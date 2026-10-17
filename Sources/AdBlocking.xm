@@ -7,6 +7,7 @@
 - (BOOL)shouldBlockUpgradeDialog { return YES; }
 %end
 %hook YTIPlayerResponse
+- (BOOL)isMonetized { return NO; }
 %new(@@:)
 - (NSMutableArray *)playerAdsArray {
     return [NSMutableArray array];
@@ -22,6 +23,12 @@
 %end
 %hook YTHotConfig
 - (BOOL)clientInfraClientConfigIosEnableFillingEncodedHacksInnertubeContext { return NO; }
+%end
+%hook YTAdsInnerTubeContextDecorator
+- (void)decorateContext:(id)context {}
+%end
+%hook YTAccountScopedAdsInnerTubeContextDecorator
+- (void)decorateContext:(id)context {}
 %end
 %hook YTAdShieldUtils
 + (id)spamSignalsDictionary { return @{}; }
@@ -45,6 +52,7 @@
 - (BOOL)shouldBlockUpgradeDialog { return YES; }
 %end
 %hook YTIPlayerResponse
+- (BOOL)isMonetized { return NO; }
 %new(@@:)
 - (NSMutableArray *)playerAdsArray {
     return [NSMutableArray array];
@@ -60,6 +68,12 @@
 %end
 %hook YTHotConfig
 - (BOOL)clientInfraClientConfigIosEnableFillingEncodedHacksInnertubeContext { return NO; }
+%end
+%hook YTAdsInnerTubeContextDecorator
+- (void)decorateContext:(id)context {}
+%end
+%hook YTAccountScopedAdsInnerTubeContextDecorator
+- (void)decorateContext:(id)context {}
 %end
 %hook YTAdShieldUtils
 + (id)spamSignalsDictionary { return @{}; }
@@ -78,43 +92,8 @@
 %hook MDXSessionImpl
 - (void)adPlaying:(id)ad {}
 %end
-static BOOL isAdsReelContentModel(YTReelContentModel *model) {
-    if ([model respondsToSelector:@selector(videoType)])
-        return ((YTReelModel *)model).videoType == 3;
-    if ([model isKindOfClass:%c(YTReelNonVideoContentModel)])
-        return [[[(YTReelNonVideoContentModel *)model renderer].customData description] containsString:@"YTIReelNonVideoAdsCustomData_reelNonVideoAdsCustomData"];
-    return NO;
-}
-%hook YTReelDataSource
-- (YTReelContentModel *)makeContentModelForEntry:(id)entry {
-    YTReelContentModel *model = %orig;
-    if (isAdsReelContentModel(model))
-        return nil;
-    return model;
-}
-%end
-%hook YTReelContentModel
-+ (YTReelContentModel *)makeContentModelForEntry:(id)entry {
-    YTReelContentModel *model = %orig;
-    if (isAdsReelContentModel(model))
-        return nil;
-    return model;
-}
-%end
-%hook YTReelInfinitePlaybackDataSource
-- (YTReelContentModel *)makeContentModelForEntry:(id)entry {
-    YTReelContentModel *model = %orig;
-    if (isAdsReelContentModel(model))
-        return nil;
-    return model;
-}
-- (void)setReels:(NSMutableOrderedSet <YTReelContentModel *> *)reels {
-    [reels removeObjectsAtIndexes:[reels indexesOfObjectsPassingTest:^BOOL(YTReelContentModel *obj, NSUInteger idx, BOOL *stop) {
-        return isAdsReelContentModel(obj);
-    }]];
-    %orig;
-}
-%end
+// YTLite-compatible policy: do not mutate the active Shorts/Reels carousel.
+// Ads are suppressed upstream through player/Innertube response hooks below.
 static BOOL isProductList(YTICommand *command) {
     if ([command respondsToSelector:@selector(yt_showEngagementPanelEndpoint)]) {
         YTIShowEngagementPanelEndpoint *endpoint = [command yt_showEngagementPanelEndpoint];
