@@ -131,9 +131,33 @@
     %orig;
 }
 %end
+static NSString *UYTAdProbeLogPath(void) {
+    NSArray<NSString *> *paths = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES);
+    NSString *documents = paths.firstObject;
+    if (!documents.length) documents = NSTemporaryDirectory();
+    return [documents stringByAppendingPathComponent:@"UYT_ADPROBE.log"];
+}
+
+static void UYTAppendAdProbeLine(NSString *line) {
+    if (!line.length) return;
+    NSString *record = [line stringByAppendingString:@"\n"];
+    NSData *data = [record dataUsingEncoding:NSUTF8StringEncoding];
+    if (!data.length) return;
+    NSString *path = UYTAdProbeLogPath();
+    @synchronized([NSFileManager defaultManager]) {
+        if (![[NSFileManager defaultManager] fileExistsAtPath:path])
+            [[NSFileManager defaultManager] createFileAtPath:path contents:nil attributes:nil];
+        NSFileHandle *handle = [NSFileHandle fileHandleForWritingAtPath:path];
+        [handle seekToEndOfFile];
+        [handle writeData:data];
+        [handle closeFile];
+    }
+}
+
 static void UYTProbeShortsModel(NSString *source, id model) {
+    NSString *timestamp = [[NSDate date] descriptionWithLocale:[NSLocale localeWithLocaleIdentifier:@"en_US_POSIX"]];
     if (!model) {
-        UYTDebugInfo(@"UYT_ADPROBE source=%@ model=nil", source);
+        UYTAppendAdProbeLine([NSString stringWithFormat:@"%@ source=%@ model=nil", timestamp, source]);
         return;
     }
     NSInteger videoType = -1;
@@ -143,12 +167,10 @@ static void UYTProbeShortsModel(NSString *source, id model) {
     NSString *customData = @"";
     if ([model isKindOfClass:%c(YTReelNonVideoContentModel)])
         customData = [[[(YTReelNonVideoContentModel *)model renderer].customData description] copy] ?: @"";
-    UYTDebugInfo(@"UYT_ADPROBE source=%@ class=%@ videoType=%ld custom=%@ desc=%@",
-                 source,
-                 NSStringFromClass([model class]),
-                 (long)videoType,
-                 customData,
-                 description);
+    NSString *line = [NSString stringWithFormat:@"%@ source=%@ class=%@ videoType=%ld custom=%@ desc=%@",
+                      timestamp, source, NSStringFromClass([model class]), (long)videoType, customData, description];
+    UYTAppendAdProbeLine(line);
+    UYTDebugInfo(@"UYT_ADPROBE %@", line);
 }
 static BOOL UYTIsVideoShortsAdModel(YTReelContentModel *model) {
     if (!model) return NO;
