@@ -131,6 +131,25 @@
     %orig;
 }
 %end
+static void UYTProbeShortsModel(NSString *source, id model) {
+    if (!model) {
+        UYTDebugInfo(@"UYT_ADPROBE source=%@ model=nil", source);
+        return;
+    }
+    NSInteger videoType = -1;
+    if ([model respondsToSelector:@selector(videoType)])
+        videoType = ((YTReelModel *)model).videoType;
+    NSString *description = [model description] ?: @"";
+    NSString *customData = @"";
+    if ([model isKindOfClass:%c(YTReelNonVideoContentModel)])
+        customData = [[[(YTReelNonVideoContentModel *)model renderer].customData description] copy] ?: @"";
+    UYTDebugInfo(@"UYT_ADPROBE source=%@ class=%@ videoType=%ld custom=%@ desc=%@",
+                 source,
+                 NSStringFromClass([model class]),
+                 (long)videoType,
+                 customData,
+                 description);
+}
 static BOOL UYTIsVideoShortsAdModel(YTReelContentModel *model) {
     if (!model) return NO;
     return [model respondsToSelector:@selector(videoType)] && ((YTReelModel *)model).videoType == 3;
@@ -149,6 +168,7 @@ static BOOL UYTIsAnyShortsAdModel(YTReelContentModel *model) {
 %hook YTReelDataSource
 - (YTReelContentModel *)makeContentModelForEntry:(id)entry {
     YTReelContentModel *model = %orig;
+    UYTProbeShortsModel(@"YTReelDataSource.makeContentModelForEntry", model);
     return UYTIsVideoShortsAdModel(model) ? nil : model;
 }
 %end
@@ -156,11 +176,12 @@ static BOOL UYTIsAnyShortsAdModel(YTReelContentModel *model) {
 %hook YTReelInfinitePlaybackDataSource
 - (YTReelContentModel *)makeContentModelForEntry:(id)entry {
     YTReelContentModel *model = %orig;
+    UYTProbeShortsModel(@"YTReelInfinitePlaybackDataSource.makeContentModelForEntry", model);
     return UYTIsAnyShortsAdModel(model) ? nil : model;
 }
 
 - (NSMutableOrderedSet *)reels {
-    NSMutableOrderedSet *originalReels = %orig;
+    NSMutableOrderedSet *originalReels = %orig;`n    for (id model in originalReels) UYTProbeShortsModel(@"YTReelInfinitePlaybackDataSource.reels", model);
     if (![originalReels isKindOfClass:[NSMutableOrderedSet class]])
         return originalReels;
 
