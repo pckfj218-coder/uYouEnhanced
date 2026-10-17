@@ -94,6 +94,28 @@
 %end
 // YTLite-compatible policy: do not mutate the active Shorts/Reels carousel.
 // Ads are suppressed upstream through player/Innertube response hooks below.
+static BOOL UYTIsShortsAdModel(id model) {
+    if (!model) return NO;
+    if ([model respondsToSelector:@selector(videoType)] && [(YTReelModel *)model videoType] == 3)
+        return YES;
+    if ([model isKindOfClass:%c(YTReelNonVideoContentModel)]) {
+        id renderer = [(YTReelNonVideoContentModel *)model renderer];
+        NSString *description = [[renderer valueForKey:@"customData"] description];
+        return [description containsString:@"YTIReelNonVideoAdsCustomData_reelNonVideoAdsCustomData"];
+    }
+    return NO;
+}
+%hook YTReelInfinitePlaybackDataSource
+- (void)setReels:(NSMutableOrderedSet *)reels {
+    NSMutableOrderedSet *filteredReels = [reels mutableCopy];
+    NSIndexSet *adIndexes = [filteredReels indexesOfObjectsPassingTest:^BOOL(id model, NSUInteger idx, BOOL *stop) {
+        return UYTIsShortsAdModel(model);
+    }];
+    if (adIndexes.count > 0)
+        [filteredReels removeObjectsAtIndexes:adIndexes];
+    %orig(filteredReels);
+}
+%end
 static BOOL isProductList(YTICommand *command) {
     if ([command respondsToSelector:@selector(yt_showEngagementPanelEndpoint)]) {
         YTIShowEngagementPanelEndpoint *endpoint = [command yt_showEngagementPanelEndpoint];
