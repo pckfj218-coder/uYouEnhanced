@@ -131,6 +131,34 @@
     %orig;
 }
 %end
+static BOOL UYTFactoryModelIsShortsAd(YTReelContentModel *model) {
+    if (!model) return NO;
+    if ([model respondsToSelector:@selector(videoType)] && ((YTReelModel *)model).videoType == 3)
+        return YES;
+    if ([model isKindOfClass:%c(YTReelNonVideoContentModel)]) {
+        NSString *description = [[[(YTReelNonVideoContentModel *)model renderer].customData description] copy];
+        return [description containsString:@"YTIReelNonVideoAdsCustomData_reelNonVideoAdsCustomData"];
+    }
+    return NO;
+}
+%hook YTReelDataSource
+- (YTReelContentModel *)makeContentModelForEntry:(id)entry {
+    YTReelContentModel *model = %orig;
+    return UYTFactoryModelIsShortsAd(model) ? nil : model;
+}
+%end
+%hook YTReelContentModel
++ (YTReelContentModel *)makeContentModelForEntry:(id)entry {
+    YTReelContentModel *model = %orig;
+    return UYTFactoryModelIsShortsAd(model) ? nil : model;
+}
+%end
+%hook YTReelInfinitePlaybackDataSource
+- (YTReelContentModel *)makeContentModelForEntry:(id)entry {
+    YTReelContentModel *model = %orig;
+    return UYTFactoryModelIsShortsAd(model) ? nil : model;
+}
+%end
 static BOOL isProductList(YTICommand *command) {
     if ([command respondsToSelector:@selector(yt_showEngagementPanelEndpoint)]) {
         YTIShowEngagementPanelEndpoint *endpoint = [command yt_showEngagementPanelEndpoint];
