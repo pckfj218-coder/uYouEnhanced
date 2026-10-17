@@ -134,15 +134,7 @@ static void UYTObserve(YTPlayerViewController *player,
     NSString *oldIdentity = objc_getAssociatedObject(player, kUYTIdentity);
     CGFloat last = [objc_getAssociatedObject(player, kUYTLastTime) doubleValue];
     CGFloat oldDuration = [objc_getAssociatedObject(player, kUYTDuration) doubleValue];
-    BOOL newItem = ![oldIdentity isEqualToString:identity] ||
-                   (oldDuration > 0.0 && fabs(oldDuration - duration) > 0.75);
-
-    if (newItem) {
-        UYTResetPlayerState(player, identity, current, duration);
-        return;
-    }
-
-    BOOL nearEnd = current >= MAX(duration - 0.85, duration * 0.982);
+    BOOL triggered = [objc_getAssociatedObject(player, kUYTTriggered) boolValue];     BOOL restartedAfterTriggered = triggered &&                                    last > MAX(duration - 1.75, duration * 0.955) &&                                    current < MIN(1.35, duration * 0.10);     BOOL resumedFromStaleTriggeredState = triggered &&                                           last >= 0.0 &&                                           current > last + 0.35 &&                                           current < duration * 0.90;     BOOL newItem = ![oldIdentity isEqualToString:identity] ||                    (oldDuration > 0.0 && fabs(oldDuration - duration) > 0.75) ||                    restartedAfterTriggered ||                    resumedFromStaleTriggeredState;     if (newItem) {         UYTResetPlayerState(player, identity, current, duration);         return;     } BOOL nearEnd = current >= MAX(duration - 0.85, duration * 0.982);
     BOOL wrappedAfterEnd = [objc_getAssociatedObject(player, kUYTNearEnd) boolValue] &&
                            last > MAX(duration - 1.75, duration * 0.955) &&
                            current < MIN(1.35, duration * 0.10);
