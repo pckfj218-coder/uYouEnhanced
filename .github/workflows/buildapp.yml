@@ -157,7 +157,9 @@ jobs:
       - name: Prepare YouTube iPA
         id: prepare_youtube
         run: |
-          wget "$YOUTUBE_URL" --quiet -O main/YouTube.ipa
+          test -n "${URL_YT:-}" || { echo "::error::URL_YT is empty"; exit 1; }
+          wget --server-response --tries=3 --timeout=60 "$URL_YT" -O main/YouTube.ipa
+          test -s main/YouTube.ipa || { echo "::error::Downloaded IPA is empty"; exit 1; }
           cd main
           mv YouTube.ipa YouTube.zip
           unzip -q YouTube.zip
