@@ -32,11 +32,11 @@
 %end
 %hook YTAdShieldUtils
 + (id)spamSignalsDictionary { return @{}; }
-+ (id)spamSignalsDictionaryWithoutIDFA { return @{}; }
++ (id)spamSignalsDictionaryWithoutIDFA { return nil; }
 %end
 %hook YTDataUtils
-+ (id)spamSignalsDictionary { return @{ @"ms": @"" }; }
-+ (id)spamSignalsDictionaryWithoutIDFA { return @{}; }
++ (id)spamSignalsDictionary { return nil; }
++ (id)spamSignalsDictionaryWithoutIDFA { return nil; }
 %end
 %hook YTLocalPlaybackController
 - (id)createAdsPlaybackCoordinator { return nil; }
@@ -77,11 +77,11 @@
 %end
 %hook YTAdShieldUtils
 + (id)spamSignalsDictionary { return @{}; }
-+ (id)spamSignalsDictionaryWithoutIDFA { return @{}; }
++ (id)spamSignalsDictionaryWithoutIDFA { return nil; }
 %end
 %hook YTDataUtils
-+ (id)spamSignalsDictionary { return @{ @"ms": @"" }; }
-+ (id)spamSignalsDictionaryWithoutIDFA { return @{}; }
++ (id)spamSignalsDictionary { return nil; }
++ (id)spamSignalsDictionaryWithoutIDFA { return nil; }
 %end
 %hook YTLocalPlaybackController
 - (id)createAdsPlaybackCoordinator { return nil; }
@@ -94,26 +94,41 @@
 %end
 // YTLite-compatible policy: do not mutate the active Shorts/Reels carousel.
 // Ads are suppressed upstream through player/Innertube response hooks below.
-static BOOL UYTIsShortsAdModel(id model) {
-    if (!model) return NO;
-    if ([model respondsToSelector:@selector(videoType)] && [(YTReelModel *)model videoType] == 3)
-        return YES;
-    if ([model isKindOfClass:%c(YTReelNonVideoContentModel)]) {
-        id renderer = [(YTReelNonVideoContentModel *)model renderer];
-        NSString *description = [[renderer valueForKey:@"customData"] description];
-        return [description containsString:@"YTIReelNonVideoAdsCustomData_reelNonVideoAdsCustomData"];
-    }
-    return NO;
+%hook YTIElementRenderer
+- (NSData *)elementData {
+    if (self.hasCompatibilityOptions && self.compatibilityOptions.hasAdLoggingData)
+        return nil;
+    NSString *description = [self description];
+    NSArray *ads = @[
+        @"brand_promo",
+        @"product_carousel",
+        @"product_engagement_panel",
+        @"product_item",
+        @"text_search_ad",
+        @"text_image_button_layout",
+        @"carousel_headered_layout",
+        @"carousel_footered_layout",
+        @"square_image_layout",
+        @"landscape_image_wide_button_layout",
+        @"feed_ad_metadata"
+    ];
+    if ([ads containsObject:description])
+        return [NSData data];
+    return %orig;
 }
-%hook YTReelInfinitePlaybackDataSource
-- (void)setReels:(NSMutableOrderedSet *)reels {
-    NSMutableOrderedSet *filteredReels = [reels mutableCopy];
-    NSIndexSet *adIndexes = [filteredReels indexesOfObjectsPassingTest:^BOOL(id model, NSUInteger idx, BOOL *stop) {
-        return UYTIsShortsAdModel(model);
+%end
+%hook YTSectionListViewController
+- (void)loadWithModel:(YTISectionListRenderer *)model {
+    NSMutableArray<YTISectionListSupportedRenderers *> *contentsArray = model.contentsArray;
+    NSIndexSet *removeIndexes = [contentsArray indexesOfObjectsPassingTest:^BOOL(YTISectionListSupportedRenderers *renderers, NSUInteger idx, BOOL *stop) {
+        YTIItemSectionRenderer *sectionRenderer = renderers.itemSectionRenderer;
+        YTIItemSectionSupportedRenderers *firstObject = [sectionRenderer.contentsArray firstObject];
+        return firstObject.hasPromotedVideoRenderer ||
+               firstObject.hasCompactPromotedVideoRenderer ||
+               firstObject.hasPromotedVideoInlineMutedRenderer;
     }];
-    if (adIndexes.count > 0)
-        [filteredReels removeObjectsAtIndexes:adIndexes];
-    %orig(filteredReels);
+    [contentsArray removeObjectsAtIndexes:removeIndexes];
+    %orig;
 }
 %end
 static BOOL isProductList(YTICommand *command) {
