@@ -8,6 +8,9 @@ static NSString *const UYTShortsAdSkipKey = @"shortsAdSkip_enabled";
 
 __attribute__((constructor)) static void UYTRegisterShortsAdSkipDefaults(void) {
     [[NSUserDefaults standardUserDefaults] registerDefaults:@{
+        @"removeYouTubeAds": @YES,
+        @"autoNextShorts_enabled": @YES,
+        @"shortsAdSkip_enabled": @YES,
         @"shortsAdSkip_enabled": @YES
     }];
 }
@@ -341,15 +344,13 @@ static void UYTAdvancePastShortsAdView(UIView *view, NSInteger attempt) {
     if (attempt == 1) {
         if ([objc_getAssociatedObject(view, kUYTShortsAdAdvancePending) boolValue]) return;
         objc_setAssociatedObject(view, kUYTShortsAdAdvancePending, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-        view.alpha = 0.0;
-        view.userInteractionEnabled = NO;
-        UYTDebugInfo(@"UYT_SHORTS_AD_PREDISPLAY_HIDE class=%@", NSStringFromClass([view class]));
+        UYTDebugInfo(@"UYT_SHORTS_AD_SKIP_REQUEST class=%@", NSStringFromClass([view class]));
     }
 
     dispatch_async(dispatch_get_main_queue(), ^{
         UIViewController *controller = UYTActiveShortsAdvanceController();
         if (controller) {
-            UYTDebugInfo(@"UYT_SHORTS_AD_SKIP_V6 class=%@ reel=%@ attempt=%ld", NSStringFromClass([view class]), NSStringFromClass([controller class]), (long)attempt);
+            UYTDebugInfo(@"UYT_SHORTS_AD_SKIP_V7 class=%@ reel=%@ attempt=%ld", NSStringFromClass([view class]), NSStringFromClass([controller class]), (long)attempt);
             ((void (*)(id, SEL, id))objc_msgSend)(controller, @selector(reelContentViewRequestsAdvanceToNextVideo:), nil);
             return;
         }
@@ -359,10 +360,8 @@ static void UYTAdvancePastShortsAdView(UIView *view, NSInteger attempt) {
                 UYTAdvancePastShortsAdView(view, attempt + 1);
             });
         } else {
-            view.alpha = 1.0;
-            view.userInteractionEnabled = YES;
             objc_setAssociatedObject(view, kUYTShortsAdAdvancePending, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-            UYTDebugInfo(@"UYT_SHORTS_AD_SKIP_V6_FAILED class=%@ attempts=%ld restored=1", NSStringFromClass([view class]), (long)attempt);
+            UYTDebugInfo(@"UYT_SHORTS_AD_SKIP_V7_FAILED class=%@ attempts=%ld", NSStringFromClass([view class]), (long)attempt);
         }
     });
 }
