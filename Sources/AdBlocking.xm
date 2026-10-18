@@ -154,6 +154,29 @@ static void UYTAppendAdProbeLine(NSString *line) {
     }
 }
 
+static NSString *UYTAdProbeLogPath(void) {
+    NSArray<NSString *> *paths = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES);
+    NSString *documents = paths.firstObject;
+    if (!documents.length) documents = NSTemporaryDirectory();
+    return [documents stringByAppendingPathComponent:@"UYT_ADPROBE.log"];
+}
+
+static void UYTAppendAdProbeLine(NSString *line) {
+    if (!line.length) return;
+    NSString *record = [line stringByAppendingString:@"\n"];
+    NSData *data = [record dataUsingEncoding:NSUTF8StringEncoding];
+    if (!data.length) return;
+    NSString *path = UYTAdProbeLogPath();
+    @synchronized([NSFileManager defaultManager]) {
+        if (![[NSFileManager defaultManager] fileExistsAtPath:path])
+            [[NSFileManager defaultManager] createFileAtPath:path contents:nil attributes:nil];
+        NSFileHandle *handle = [NSFileHandle fileHandleForWritingAtPath:path];
+        [handle seekToEndOfFile];
+        [handle writeData:data];
+        [handle closeFile];
+    }
+}
+
 static void UYTProbeShortsModel(NSString *source, id model) {
     NSString *timestamp = [[NSDate date] descriptionWithLocale:[NSLocale localeWithLocaleIdentifier:@"en_US_POSIX"]];
     if (!model) {
