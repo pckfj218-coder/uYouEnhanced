@@ -11,7 +11,6 @@ __attribute__((constructor)) static void UYTRegisterShortsAdSkipDefaults(void) {
         @"removeYouTubeAds": @YES,
         @"autoNextShorts_enabled": @YES,
         @"shortsAdSkip_enabled": @YES,
-        @"shortsAdSkip_enabled": @YES
     }];
 }
 
