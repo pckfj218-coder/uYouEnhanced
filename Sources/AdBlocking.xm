@@ -294,26 +294,48 @@ static BOOL UYTIsAnyShortsAdModel(YTReelContentModel *model) {
     return filteredReels;
 }
 %end
-static UIViewController *UYTNearestViewControllerFromView(UIView *view) {
-    UIResponder *responder = view;
-    while (responder) {
-        responder = responder.nextResponder;
-        if ([responder isKindOfClass:[UIViewController class]])
-            return (UIViewController *)responder;
+static UIViewController *UYTFindShortsAdvanceController(UIViewController *controller) {
+    if (!controller) return nil;
+    if ([controller respondsToSelector:@selector(autoAdvanceControllerDidRequestNextReel:)])
+        return controller;
+    UIViewController *presented = UYTFindShortsAdvanceController(controller.presentedViewController);
+    if (presented) return presented;
+    for (UIViewController *child in controller.childViewControllers) {
+        UIViewController *match = UYTFindShortsAdvanceController(child);
+        if (match) return match;
     }
     return nil;
 }
 
-static void UYTAdvancePastShortsAdView(UIView *view) {
-    dispatch_async(dispatch_get_main_queue(), ^{
-        UIViewController *controller = UYTNearestViewControllerFromView(view);
-        while (controller && ![controller respondsToSelector:@selector(autoAdvanceControllerDidRequestNextReel:)])
-            controller = controller.parentViewController;
-        if ([controller respondsToSelector:@selector(autoAdvanceControllerDidRequestNextReel:)]) {
-            UYTDebugInfo(@"UYT_SHORTS_AD_SKIP class=%@ controller=%@", NSStringFromClass([view class]), NSStringFromClass([controller class]));
+static UIViewController *UYTActiveShortsAdvanceController(void) {
+    for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
+        if (![scene isKindOfClass:[UIWindowScene class]]) continue;
+        UIWindowScene *windowScene = (UIWindowScene *)scene;
+        if (windowScene.activationState != UISceneActivationStateForegroundActive) continue;
+        for (UIWindow *window in windowScene.windows) {
+            UIViewController *match = UYTFindShortsAdvanceController(window.rootViewController);
+            if (match) return match;
+        }
+    }
+    return nil;
+}
+
+static void UYTAdvancePastShortsAdView(UIView *view, NSInteger attempt) {
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.15 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        UIViewController *controller = UYTActiveShortsAdvanceController();
+        if (controller) {
+            view.hidden = YES;
+            view.userInteractionEnabled = NO;
+            UYTDebugInfo(@"UYT_SHORTS_AD_SKIP class=%@ controller=%@ attempt=%ld", NSStringFromClass([view class]), NSStringFromClass([controller class]), (long)attempt);
             ((void (*)(id, SEL, id))objc_msgSend)(controller, @selector(autoAdvanceControllerDidRequestNextReel:), nil);
+            return;
+        }
+        if (attempt < 10) {
+            UYTAdvancePastShortsAdView(view, attempt + 1);
         } else {
-            UYTDebugInfo(@"UYT_SHORTS_AD_SKIP_NO_CONTROLLER class=%@", NSStringFromClass([view class]));
+            view.hidden = NO;
+            view.userInteractionEnabled = YES;
+            UYTDebugInfo(@"UYT_SHORTS_AD_SKIP_FAILED class=%@ attempts=%ld", NSStringFromClass([view class]), (long)attempt);
         }
     });
 }
@@ -321,20 +343,13 @@ static void UYTAdvancePastShortsAdView(UIView *view) {
 %hook YTShortsAdsContentView
 - (id)initWithFrame:(CGRect)frame reelModel:(id)reelModel ghostViewManager:(id)ghostViewManager parentResponder:(id)parentResponder {
     id result = %orig;
-    if (result) {
-        ((UIView *)result).hidden = YES;
-        ((UIView *)result).userInteractionEnabled = NO;
-        UYTAdvancePastShortsAdView((UIView *)result);
-    }
     return result;
 }
 
 - (void)didStartRenderingAdsOverlay {
     %orig;
     UIView *adView = (UIView *)(id)self;
-    adView.hidden = YES;
-    adView.userInteractionEnabled = NO;
-    UYTAdvancePastShortsAdView(adView);
+    UYTAdvancePastShortsAdView(adView, 1);
 }
 %end
 static BOOL isProductList(YTICommand *command) {
