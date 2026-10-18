@@ -347,9 +347,9 @@ static void UYTAdvancePastShortsAdView(UIView *view, NSInteger attempt) {
     }
 
     dispatch_async(dispatch_get_main_queue(), ^{
-        UIViewController *controller = UYTActiveShortsAdvanceController();
+        UIViewController *controller = UYTActiveRealShortsControllerV82();
         if (controller) {
-            UYTDebugInfo(@"UYT_SHORTS_AD_SKIP_V7 class=%@ reel=%@ attempt=%ld", NSStringFromClass([view class]), NSStringFromClass([controller class]), (long)attempt);
+            UYTDebugInfo(@"UYT_SHORTS_AD_SKIP_V8_2 class=%@ reel=%@ attempt=%ld", NSStringFromClass([view class]), NSStringFromClass([controller class]), (long)attempt);
             ((void (*)(id, SEL, id))objc_msgSend)(controller, @selector(reelContentViewRequestsAdvanceToNextVideo:), nil);
             return;
         }
@@ -363,6 +363,39 @@ static void UYTAdvancePastShortsAdView(UIView *view, NSInteger attempt) {
             UYTDebugInfo(@"UYT_SHORTS_AD_SKIP_V7_FAILED class=%@ attempts=%ld", NSStringFromClass([view class]), (long)attempt);
         }
     });
+}
+static UIViewController *UYTFindRealShortsControllerV82(UIViewController *root, NSInteger depth) {
+    if (!root || depth > 32) return nil;
+    NSString *name = NSStringFromClass([root class]);
+    BOOL isAdsController = [name containsString:@"AdsPlayerViewController"];
+    BOOL isRealController = [name isEqualToString:@"YTShortsPlayerViewController"] ||
+                            [name isEqualToString:@"YTReelPlayerViewController"] ||
+                            ([name containsString:@"ShortsPlayerViewController"] && !isAdsController);
+    SEL selector = NSSelectorFromString(@"reelContentViewRequestsAdvanceToNextVideo:");
+    if (isRealController && !isAdsController && [root respondsToSelector:selector]) return root;
+    UIViewController *found = UYTFindRealShortsControllerV82(root.presentedViewController, depth + 1);
+    if (found) return found;
+    for (UIViewController *child in root.childViewControllers) {
+        found = UYTFindRealShortsControllerV82(child, depth + 1);
+        if (found) return found;
+    }
+    return nil;
+}
+
+static UIViewController *UYTActiveRealShortsControllerV82(void) {
+    for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
+        if (![scene isKindOfClass:UIWindowScene.class]) continue;
+        UIWindowScene *windowScene = (UIWindowScene *)scene;
+        for (UIWindow *window in windowScene.windows.reverseObjectEnumerator) {
+            UIViewController *found = UYTFindRealShortsControllerV82(window.rootViewController, 0);
+            if (found) return found;
+        }
+    }
+    for (UIWindow *window in UIApplication.sharedApplication.windows.reverseObjectEnumerator) {
+        UIViewController *found = UYTFindRealShortsControllerV82(window.rootViewController, 0);
+        if (found) return found;
+    }
+    return nil;
 }
 %hook YTShortsAdsContentView
 - (id)initWithFrame:(CGRect)frame reelModel:(id)reelModel ghostViewManager:(id)ghostViewManager parentResponder:(id)parentResponder {

@@ -38,6 +38,7 @@ static BOOL UYTAutoNextEnabled(void) {
 static BOOL UYTIsReelController(id object) {
     if (!object) return NO;
     NSString *name = NSStringFromClass([object class]);
+    if ([name containsString:@"AdsPlayerViewController"]) return NO;
     return [name containsString:@"ReelPlayerViewController"] ||
            [name containsString:@"ShortsPlayerViewController"];
 }
@@ -121,6 +122,7 @@ static void UYTAdvance(YTPlayerViewController *player,
     dispatch_async(dispatch_get_main_queue(), ^{
         id strongReel = weakReel;
         if (strongReel && [strongReel respondsToSelector:selector]) {
+            UYTDebugInfo(@"UYT_AUTO_NEXT_V82_ADVANCE reel=%@", NSStringFromClass([strongReel class]));
             ((void (*)(id, SEL, id))objc_msgSend)(strongReel, selector, video);
         }
     });
@@ -129,6 +131,12 @@ static void UYTAdvance(YTPlayerViewController *player,
 static void UYTObserve(YTPlayerViewController *player,
                        YTSingleVideoController *video,
                        YTSingleVideoTime *timeObject) {
+    static NSTimeInterval uytV82LastLog = 0;
+    NSTimeInterval uytV82Now = NSProcessInfo.processInfo.systemUptime;
+    if (uytV82Now - uytV82LastLog >= 2.0) {
+        uytV82LastLog = uytV82Now;
+        UYTDebugInfo(@"UYT_AUTO_NEXT_V82_OBSERVE enabled=%d player=%@", UYTAutoNextEnabled(), NSStringFromClass([player class]));
+    }
     if (!UYTAutoNextEnabled() || !player || !video || !timeObject) return;
     if (!UYTFindReel(player)) return;
 
