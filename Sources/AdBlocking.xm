@@ -320,24 +320,39 @@ static UIViewController *UYTActiveShortsAdvanceController(void) {
     return nil;
 }
 
+static const void *kUYTShortsAdAdvancePending = &kUYTShortsAdAdvancePending;
+
 static void UYTAdvancePastShortsAdView(UIView *view, NSInteger attempt) {
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.15 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+    if (!view) return;
+
+    if (attempt == 1) {
+        if ([objc_getAssociatedObject(view, kUYTShortsAdAdvancePending) boolValue]) return;
+        objc_setAssociatedObject(view, kUYTShortsAdAdvancePending, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        view.alpha = 0.0;
+        view.userInteractionEnabled = NO;
+        UYTDebugInfo(@"UYT_SHORTS_AD_PREDISPLAY_HIDE class=%@", NSStringFromClass([view class]));
+    }
+
+    dispatch_async(dispatch_get_main_queue(), ^{
         UIViewController *controller = UYTActiveShortsAdvanceController();
         if (controller) {
-            UYTDebugInfo(@"UYT_SHORTS_AD_SKIP_V5 class=%@ reel=%@ attempt=%ld", NSStringFromClass([view class]), NSStringFromClass([controller class]), (long)attempt);
+            UYTDebugInfo(@"UYT_SHORTS_AD_SKIP_V6 class=%@ reel=%@ attempt=%ld", NSStringFromClass([view class]), NSStringFromClass([controller class]), (long)attempt);
             ((void (*)(id, SEL, id))objc_msgSend)(controller, @selector(reelContentViewRequestsAdvanceToNextVideo:), nil);
             return;
         }
+
         if (attempt < 10) {
-            UYTAdvancePastShortsAdView(view, attempt + 1);
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.02 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                UYTAdvancePastShortsAdView(view, attempt + 1);
+            });
         } else {
-            view.hidden = NO;
+            view.alpha = 1.0;
             view.userInteractionEnabled = YES;
-            UYTDebugInfo(@"UYT_SHORTS_AD_SKIP_FAILED class=%@ attempts=%ld", NSStringFromClass([view class]), (long)attempt);
+            objc_setAssociatedObject(view, kUYTShortsAdAdvancePending, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+            UYTDebugInfo(@"UYT_SHORTS_AD_SKIP_V6_FAILED class=%@ attempts=%ld restored=1", NSStringFromClass([view class]), (long)attempt);
         }
     });
 }
-
 %hook YTShortsAdsContentView
 - (id)initWithFrame:(CGRect)frame reelModel:(id)reelModel ghostViewManager:(id)ghostViewManager parentResponder:(id)parentResponder {
     id result = %orig;
