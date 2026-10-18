@@ -324,8 +324,6 @@ static void UYTAdvancePastShortsAdView(UIView *view, NSInteger attempt) {
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.15 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         UIViewController *controller = UYTActiveShortsAdvanceController();
         if (controller) {
-            view.hidden = YES;
-            view.userInteractionEnabled = NO;
             UYTDebugInfo(@"UYT_SHORTS_AD_SKIP class=%@ controller=%@ attempt=%ld", NSStringFromClass([view class]), NSStringFromClass([controller class]), (long)attempt);
             ((void (*)(id, SEL, id))objc_msgSend)(controller, @selector(autoAdvanceControllerDidRequestNextReel:), nil);
             return;
@@ -343,12 +341,25 @@ static void UYTAdvancePastShortsAdView(UIView *view, NSInteger attempt) {
 %hook YTShortsAdsContentView
 - (id)initWithFrame:(CGRect)frame reelModel:(id)reelModel ghostViewManager:(id)ghostViewManager parentResponder:(id)parentResponder {
     id result = %orig;
+    if (result) {
+        UIView *adView = (UIView *)(id)result;
+        UYTDebugInfo(@"UYT_SHORTS_AD_VIEW_INIT class=%@", NSStringFromClass([adView class]));
+        UYTAdvancePastShortsAdView(adView, 1);
+    }
     return result;
 }
 
 - (void)didStartRenderingAdsOverlay {
     %orig;
     UIView *adView = (UIView *)(id)self;
+    UYTDebugInfo(@"UYT_SHORTS_AD_OVERLAY_STARTED class=%@", NSStringFromClass([adView class]));
+    UYTAdvancePastShortsAdView(adView, 1);
+}
+
+- (void)setOverlayRendererFromShortsAdsRenderer:(id)renderer {
+    %orig;
+    UIView *adView = (UIView *)(id)self;
+    UYTDebugInfo(@"UYT_SHORTS_AD_RENDERER class=%@ renderer=%@", NSStringFromClass([adView class]), NSStringFromClass([renderer class]));
     UYTAdvancePastShortsAdView(adView, 1);
 }
 %end
