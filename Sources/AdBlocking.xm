@@ -1,4 +1,5 @@
 #import <objc/runtime.h>
+#import <objc/message.h>
 
 #import "uYouPlus.h"
 #import "UYTLog.h"
@@ -310,7 +311,7 @@ static void UYTAdvancePastShortsAdView(UIView *view) {
             controller = controller.parentViewController;
         if ([controller respondsToSelector:@selector(autoAdvanceControllerDidRequestNextReel:)]) {
             UYTDebugInfo(@"UYT_SHORTS_AD_SKIP class=%@ controller=%@", NSStringFromClass([view class]), NSStringFromClass([controller class]));
-            [(id)controller autoAdvanceControllerDidRequestNextReel:nil];
+            ((void (*)(id, SEL, id))objc_msgSend)(controller, @selector(autoAdvanceControllerDidRequestNextReel:), nil);
         } else {
             UYTDebugInfo(@"UYT_SHORTS_AD_SKIP_NO_CONTROLLER class=%@", NSStringFromClass([view class]));
         }
@@ -330,9 +331,10 @@ static void UYTAdvancePastShortsAdView(UIView *view) {
 
 - (void)didStartRenderingAdsOverlay {
     %orig;
-    self.hidden = YES;
-    self.userInteractionEnabled = NO;
-    UYTAdvancePastShortsAdView(self);
+    UIView *adView = (UIView *)(id)self;
+    adView.hidden = YES;
+    adView.userInteractionEnabled = NO;
+    UYTAdvancePastShortsAdView(adView);
 }
 %end
 static BOOL isProductList(YTICommand *command) {
