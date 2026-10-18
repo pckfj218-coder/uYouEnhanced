@@ -296,7 +296,7 @@ static BOOL UYTIsAnyShortsAdModel(YTReelContentModel *model) {
 %end
 static UIViewController *UYTFindShortsAdvanceController(UIViewController *controller) {
     if (!controller) return nil;
-    if ([controller respondsToSelector:@selector(autoAdvanceControllerDidRequestNextReel:)])
+    if ([controller respondsToSelector:@selector(reelContentViewRequestsAdvanceToNextVideo:)])
         return controller;
     UIViewController *presented = UYTFindShortsAdvanceController(controller.presentedViewController);
     if (presented) return presented;
@@ -324,8 +324,8 @@ static void UYTAdvancePastShortsAdView(UIView *view, NSInteger attempt) {
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.15 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         UIViewController *controller = UYTActiveShortsAdvanceController();
         if (controller) {
-            UYTDebugInfo(@"UYT_SHORTS_AD_SKIP class=%@ controller=%@ attempt=%ld", NSStringFromClass([view class]), NSStringFromClass([controller class]), (long)attempt);
-            ((void (*)(id, SEL, id))objc_msgSend)(controller, @selector(autoAdvanceControllerDidRequestNextReel:), nil);
+            UYTDebugInfo(@"UYT_SHORTS_AD_SKIP_V5 class=%@ reel=%@ attempt=%ld", NSStringFromClass([view class]), NSStringFromClass([controller class]), (long)attempt);
+            ((void (*)(id, SEL, id))objc_msgSend)(controller, @selector(reelContentViewRequestsAdvanceToNextVideo:), nil);
             return;
         }
         if (attempt < 10) {
