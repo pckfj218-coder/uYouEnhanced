@@ -4,6 +4,18 @@
 #import "uYouPlus.h"
 #import "UYTLog.h"
 
+static NSString *const UYTShortsAdSkipKey = @"shortsAdSkip_enabled";
+
+__attribute__((constructor)) static void UYTRegisterShortsAdSkipDefaults(void) {
+    [[NSUserDefaults standardUserDefaults] registerDefaults:@{
+        @"shortsAdSkip_enabled": @YES
+    }];
+}
+
+static BOOL UYTShortsAdSkipEnabled(void) {
+    return [[NSUserDefaults standardUserDefaults] boolForKey:UYTShortsAdSkipKey];
+}
+
 %group uYouAdBlockingWorkaroundLite
 %hook YTGlobalConfig
 - (BOOL)shouldBlockUpgradeDialog { return YES; }
@@ -323,6 +335,7 @@ static UIViewController *UYTActiveShortsAdvanceController(void) {
 static const void *kUYTShortsAdAdvancePending = &kUYTShortsAdAdvancePending;
 
 static void UYTAdvancePastShortsAdView(UIView *view, NSInteger attempt) {
+    if (!UYTShortsAdSkipEnabled()) return;
     if (!view) return;
 
     if (attempt == 1) {

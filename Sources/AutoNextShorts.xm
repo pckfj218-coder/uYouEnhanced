@@ -5,6 +5,12 @@
 #import <math.h>
 
 static NSString *const UYTAutoNextShortsKey = @"autoNextShorts_enabled";
+
+__attribute__((constructor)) static void UYTRegisterAutoNextShortsDefaults(void) {
+    [[NSUserDefaults standardUserDefaults] registerDefaults:@{
+        @"autoNextShorts_enabled": @YES
+    }];
+}
 static const void *kUYTIdentity = &kUYTIdentity;
 static const void *kUYTLastTime = &kUYTLastTime;
 static const void *kUYTDuration = &kUYTDuration;
