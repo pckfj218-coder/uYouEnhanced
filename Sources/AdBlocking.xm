@@ -1,3 +1,4 @@
+#import <objc/runtime.h>
 
 #import "uYouPlus.h"
 #import "UYTLog.h"
@@ -131,6 +132,82 @@
     %orig;
 }
 %end
+static BOOL UYTRuntimeNameMatches(NSString *name) {
+    if (!name.length) return NO;
+    NSArray<NSString *> *needles = @[
+        @"Reel", @"Shorts", @"Infinite", @"PlayerResponse", @"ElementRenderer",
+        @"Feed", @"Ad", @"Promo", @"Sponsored", @"VideoDataSource"
+    ];
+    for (NSString *needle in needles) {
+        if ([name rangeOfString:needle options:NSCaseInsensitiveSearch].location != NSNotFound)
+            return YES;
+    }
+    return NO;
+}
+
+static BOOL UYTRuntimeSelectorMatches(NSString *name) {
+    if (!name.length) return NO;
+    NSArray<NSString *> *needles = @[
+        @"reel", @"short", @"model", @"entry", @"content", @"item", @"feed",
+        @"dataSource", @"render", @"ad", @"promo", @"sponsor", @"videoType"
+    ];
+    for (NSString *needle in needles) {
+        if ([name rangeOfString:needle options:NSCaseInsensitiveSearch].location != NSNotFound)
+            return YES;
+    }
+    return NO;
+}
+
+static void UYTWriteRuntimeShortsClassDump(void) {
+    NSString *documents = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES).firstObject;
+    if (!documents.length) documents = NSTemporaryDirectory();
+    NSString *path = [documents stringByAppendingPathComponent:@"UYT_RUNTIME_CLASSES.log"];
+
+    int classCount = objc_getClassList(NULL, 0);
+    if (classCount <= 0) return;
+    Class *classes = (__unsafe_unretained Class *)calloc((size_t)classCount, sizeof(Class));
+    classCount = objc_getClassList(classes, classCount);
+
+    NSMutableString *output = [NSMutableString stringWithFormat:@"generated=%@ classCount=%d\n",
+                               [[NSDate date] descriptionWithLocale:[NSLocale localeWithLocaleIdentifier:@"en_US_POSIX"]],
+                               classCount];
+    for (int i = 0; i < classCount; i++) {
+        Class cls = classes[i];
+        NSString *className = NSStringFromClass(cls);
+        if (!UYTRuntimeNameMatches(className)) continue;
+        [output appendFormat:@"\nCLASS %@ SUPER %@\n", className, NSStringFromClass(class_getSuperclass(cls)) ?: @""];
+
+        unsigned int methodCount = 0;
+        Method *methods = class_copyMethodList(cls, &methodCount);
+        for (unsigned int j = 0; j < methodCount; j++) {
+            NSString *selectorName = NSStringFromSelector(method_getName(methods[j]));
+            if (UYTRuntimeSelectorMatches(selectorName))
+                [output appendFormat:@"  -[%@ %@] types=%s\n", className, selectorName, method_getTypeEncoding(methods[j]) ?: ""];
+        }
+        free(methods);
+
+        Class meta = object_getClass(cls);
+        methodCount = 0;
+        methods = class_copyMethodList(meta, &methodCount);
+        for (unsigned int j = 0; j < methodCount; j++) {
+            NSString *selectorName = NSStringFromSelector(method_getName(methods[j]));
+            if (UYTRuntimeSelectorMatches(selectorName))
+                [output appendFormat:@"  +[%@ %@] types=%s\n", className, selectorName, method_getTypeEncoding(methods[j]) ?: ""];
+        }
+        free(methods);
+    }
+    free(classes);
+
+    NSError *error = nil;
+    BOOL ok = [output writeToFile:path atomically:YES encoding:NSUTF8StringEncoding error:&error];
+    UYTDebugInfo(@"UYT_RUNTIME_DUMP ok=%d path=%@ bytes=%lu error=%@", ok, path, (unsigned long)[output lengthOfBytesUsingEncoding:NSUTF8StringEncoding], error);
+}
+
+__attribute__((constructor)) static void UYTScheduleRuntimeShortsClassDump(void) {
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(8 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        UYTWriteRuntimeShortsClassDump();
+    });
+}
 static NSString *UYTAdProbeLogPath(void) {
     NSArray<NSString *> *paths = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES);
     NSString *documents = paths.firstObject;
