@@ -293,6 +293,48 @@ static BOOL UYTIsAnyShortsAdModel(YTReelContentModel *model) {
     return filteredReels;
 }
 %end
+static UIViewController *UYTNearestViewControllerFromView(UIView *view) {
+    UIResponder *responder = view;
+    while (responder) {
+        responder = responder.nextResponder;
+        if ([responder isKindOfClass:[UIViewController class]])
+            return (UIViewController *)responder;
+    }
+    return nil;
+}
+
+static void UYTAdvancePastShortsAdView(UIView *view) {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        UIViewController *controller = UYTNearestViewControllerFromView(view);
+        while (controller && ![controller respondsToSelector:@selector(autoAdvanceControllerDidRequestNextReel:)])
+            controller = controller.parentViewController;
+        if ([controller respondsToSelector:@selector(autoAdvanceControllerDidRequestNextReel:)]) {
+            UYTDebugInfo(@"UYT_SHORTS_AD_SKIP class=%@ controller=%@", NSStringFromClass([view class]), NSStringFromClass([controller class]));
+            [(id)controller autoAdvanceControllerDidRequestNextReel:nil];
+        } else {
+            UYTDebugInfo(@"UYT_SHORTS_AD_SKIP_NO_CONTROLLER class=%@", NSStringFromClass([view class]));
+        }
+    });
+}
+
+%hook YTShortsAdsContentView
+- (id)initWithFrame:(CGRect)frame reelModel:(id)reelModel ghostViewManager:(id)ghostViewManager parentResponder:(id)parentResponder {
+    id result = %orig;
+    if (result) {
+        ((UIView *)result).hidden = YES;
+        ((UIView *)result).userInteractionEnabled = NO;
+        UYTAdvancePastShortsAdView((UIView *)result);
+    }
+    return result;
+}
+
+- (void)didStartRenderingAdsOverlay {
+    %orig;
+    self.hidden = YES;
+    self.userInteractionEnabled = NO;
+    UYTAdvancePastShortsAdView(self);
+}
+%end
 static BOOL isProductList(YTICommand *command) {
     if ([command respondsToSelector:@selector(yt_showEngagementPanelEndpoint)]) {
         YTIShowEngagementPanelEndpoint *endpoint = [command yt_showEngagementPanelEndpoint];
